@@ -1,0 +1,36 @@
+{
+  "name": "ea-compass",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "test:excel": "vite-node scripts/test-excel.mjs",
+    "test:tenants": "vite-node scripts/test-tenants.mjs",
+    "test:states": "vite-node scripts/test-states.mjs",
+    "test:capabilities": "vite-node scripts/test-capabilities.mjs",
+    "test:entities": "vite-node scripts/test-entities.mjs"
+  },
+  "dependencies": {
+    "@vue-flow/background": "^1.3.2",
+    "@vue-flow/controls": "^1.1.3",
+    "@vue-flow/core": "^1.48.2",
+    "@vue-flow/minimap": "^1.5.4",
+    "@vue-flow/node-resizer": "^1.5.1",
+    "exceljs": "^4.4.0",
+    "jszip": "^3.10.2",
+    "lucide-vue-next": "^0.460.0",
+    "vue": "^3.5.13",
+    "vue-router": "^4.5.0"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-vue": "^5.2.1",
+    "vite": "^6.0.7",
+    "vite-node": "^3.0.5"
+  },
+  "overrides": {
+    "uuid": "^11.1.1"
+  }
+}

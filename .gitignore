@@ -1,0 +1,10 @@
+node_modules
+dist
+.DS_Store
+# Terraform (state stays local – it describes the AWS setup, keep a copy safe)
+infra/terraform/.terraform/
+infra/terraform/*.tfstate
+infra/terraform/*.tfstate.*
+infra/terraform/tfplan
+.env
+.env.*

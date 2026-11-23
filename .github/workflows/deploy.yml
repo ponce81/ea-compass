@@ -1,0 +1,98 @@
+# Build, test and deploy EA Compass to S3 static website hosting.
+#   push to main      -> tests -> deploy to DEV
+#   push tag v*       -> tests -> deploy to PROD   (e.g. git tag v1.0.0 && git push origin v1.0.0)
+#   pull request      -> tests only
+# AWS access uses GitHub OIDC; each role only trusts its own trigger (see infra/terraform).
+name: Build & deploy
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: eu-central-1
+  DEV_BUCKET: ea-compass-dev-f795d5
+  DEV_ROLE: arn:aws:iam::390402561376:role/ea-compass-deploy-dev
+  PROD_BUCKET: ea-compass-prod-f795d5
+  PROD_ROLE: arn:aws:iam::390402561376:role/ea-compass-deploy-prod
+
+jobs:
+  build:
+    name: Test & build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Tests
+        run: |
+          npm run test:excel
+          npm run test:tenants
+          npm run test:states
+          npm run test:capabilities
+          npm run test:entities
+      - name: Build
+        run: npm run build
+        env:
+          VITE_APP_VERSION: ${{ github.ref_type == 'tag' && github.ref_name || format('main@{0}', github.sha) }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist
+          retention-days: 14
+
+  deploy-dev:
+    name: Deploy to DEV
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/download-artifact@v4
+        with: { name: dist, path: dist }
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ env.DEV_ROLE }}
+          aws-region: ${{ env.AWS_REGION }}
+      - name: Upload to S3
+        run: |
+          aws s3 sync dist "s3://$DEV_BUCKET" --delete --exclude index.html --cache-control "public,max-age=31536000,immutable"
+          aws s3 cp dist/index.html "s3://$DEV_BUCKET/index.html" --cache-control "no-cache"
+      - run: echo "Deployed to http://$DEV_BUCKET.s3-website.$AWS_REGION.amazonaws.com" >> "$GITHUB_STEP_SUMMARY"
+
+  deploy-prod:
+    name: Deploy to PROD
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/download-artifact@v4
+        with: { name: dist, path: dist }
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ env.PROD_ROLE }}
+          aws-region: ${{ env.AWS_REGION }}
+      - name: Upload to S3
+        run: |
+          aws s3 sync dist "s3://$PROD_BUCKET" --delete --exclude index.html --cache-control "public,max-age=31536000,immutable"
+          aws s3 cp dist/index.html "s3://$PROD_BUCKET/index.html" --cache-control "no-cache"
+      - run: echo "Deployed ${{ github.ref_name }} to http://$PROD_BUCKET.s3-website.$AWS_REGION.amazonaws.com" >> "$GITHUB_STEP_SUMMARY"

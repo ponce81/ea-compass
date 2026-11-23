@@ -1,0 +1,7 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    { "label": "EA Compass: dev server", "type": "npm", "script": "dev", "isBackground": true, "problemMatcher": [], "group": { "kind": "build", "isDefault": true } },
+    { "label": "EA Compass: build", "type": "npm", "script": "build", "problemMatcher": [] }
+  ]
+}
