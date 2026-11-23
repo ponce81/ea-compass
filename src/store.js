@@ -474,3 +474,43 @@ export function deleteEntity (type, id, { replaceWith = null } = {}) {
   if (type !== 'interface') relinkDiagrams(type, id, replaceWith)
   db[coll] = db[coll].filter(x => x.id !== id)
 }
+
+// ---- Value streams (active tenant)
+/** Returns { field: message } – empty when valid. Stage errors use keys `stage-<index>`. */
+export function validateValueStream (vs, selfId = null) {
+  const errs = {}
+  if (!String(vs.name ?? '').trim()) errs.name = 'Required.'
+  else if (db.valueStreams.some(v => v.id !== selfId && norm(v.name) === norm(vs.name))) errs.name = `"${vs.name.trim()}" already exists.`
+  if (!vs.stages?.length) errs.stages = 'Add at least one stage.'
+  const seen = new Set()
+  ;(vs.stages || []).forEach((s, i) => {
+    const n = norm(s.name)
+    if (!n) errs[`stage-${i}`] = 'Stage name is required.'
+    else if (seen.has(n)) errs[`stage-${i}`] = 'Stage names must be unique.'
+    seen.add(n)
+    if ((s.capabilityIds || []).some(id => !db.capabilities.some(c => c.id === id))) errs[`stage-${i}`] = 'Unknown capability.'
+  })
+  return errs
+}
+
+export function saveValueStream (vs) {
+  const isNew = !vs.id
+  let id = vs.id
+  if (isNew) { let n = 1; while (db.valueStreams.some(v => v.id === `VS${n}`)) n++; id = `VS${n}` }
+  const clean = {
+    id,
+    name: String(vs.name).trim(),
+    stakeholder: String(vs.stakeholder ?? '').trim(),
+    stages: vs.stages.map(s => ({ name: String(s.name).trim(), capabilityIds: uniq(s.capabilityIds || []) }))
+  }
+  const errs = validateValueStream(clean, isNew ? null : id)
+  if (Object.keys(errs).length) throw Object.assign(new Error(Object.values(errs)[0]), { fields: errs })
+  const i = db.valueStreams.findIndex(v => v.id === id)
+  if (i >= 0) db.valueStreams[i] = clean; else db.valueStreams.push(clean)
+  return id
+}
+
+export function deleteValueStream (id) {
+  if (!db.valueStreams.some(v => v.id === id)) throw new Error('Value stream not found.')
+  db.valueStreams = db.valueStreams.filter(v => v.id !== id)
+}

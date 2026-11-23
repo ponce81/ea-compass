@@ -10,6 +10,7 @@ import PageHead from '../components/PageHead.vue'
 import Drawer from '../components/Drawer.vue'
 import Tag from '../components/Tag.vue'
 import EntityChip from '../components/EntityChip.vue'
+import ValueStreamEditor from '../components/ValueStreamEditor.vue'
 
 const tab = ref('map')
 const lens = ref('gap')
@@ -39,6 +40,13 @@ const legend = computed(() => ({
   coverage: [['#fecaca', 'None'], ['#dcfce7', '1 app'], ['#dbeafe', '2 apps'], ['#fed7aa', '3+ apps (redundancy)']],
   investment: [['rgba(37,99,235,.08)', 'Low'], ['rgba(37,99,235,.3)', 'Medium'], ['rgba(37,99,235,.56)', 'High']]
 })[lens.value])
+
+// ---------------------------------------------------------- value streams
+const vsEditor = ref(null) // { id: string | null, startMode }
+function onVsDone (r) {
+  vsEditor.value = null
+  notify(`Value stream "${r.name}" ${r.action}`)
+}
 
 // ---------------------------------------------------------------- drawer
 const editMode = ref(false)
@@ -107,6 +115,7 @@ function confirmDelete () {
 <template>
   <PageHead eyebrow="Phase B – Business Architecture" title="Business Capabilities" color="var(--c-business)"
             subtitle="What the business does, independent of how. Use the lenses to find gaps, redundancies and where money is going.">
+    <button v-if="tab === 'vs'" class="btn primary" @click="vsEditor = { id: null }"><Plus :size="15" />New value stream</button>
     <button v-if="tab === 'map'" class="btn" :class="{ primary: editMode }" @click="editMode = !editMode">
       <component :is="editMode ? Check : Pencil" :size="15" />{{ editMode ? 'Done editing' : 'Edit map' }}
     </button>
@@ -140,8 +149,15 @@ function confirmDelete () {
   </template>
 
   <template v-else>
+    <div v-if="!db.valueStreams.length" class="card empty">No value streams yet. <a href="#" @click.prevent="vsEditor = { id: null }">Create the first one</a>.</div>
     <div v-for="vs in db.valueStreams" :key="vs.id" class="card" style="margin-bottom:16px">
-      <div class="card-head"><div><h2>{{ vs.name }}</h2><p>Primary stakeholder: {{ vs.stakeholder }}</p></div></div>
+      <div class="card-head">
+        <div><h2>{{ vs.name }}</h2><p>Primary stakeholder: {{ vs.stakeholder || '–' }} · {{ vs.stages.length }} stage(s)</p></div>
+        <div class="row">
+          <button class="btn" :aria-label="`Edit ${vs.name}`" @click="vsEditor = { id: vs.id }"><Pencil :size="14" />Edit</button>
+          <button class="btn danger" :aria-label="`Delete ${vs.name}`" @click="vsEditor = { id: vs.id, startMode: 'delete' }"><Trash2 :size="14" />Delete</button>
+        </div>
+      </div>
       <div class="vs">
         <div v-for="(st, i) in vs.stages" :key="st.name" class="vs-stage">
           <div class="vs-chevron" :class="{ first: i === 0 }">{{ st.name }}</div>
@@ -256,6 +272,9 @@ function confirmDelete () {
     </template>
   </Drawer>
 
+  <Drawer :open="!!vsEditor" :title="vsEditor?.id ? `${vsEditor.startMode === 'delete' ? 'Delete' : 'Edit'} ${db.valueStreams.find(v => v.id === vsEditor.id)?.name}` : 'New value stream'" subtitle="Value stream" @close="vsEditor = null">
+    <ValueStreamEditor v-if="vsEditor" :key="`${vsEditor.id}-${vsEditor.startMode}`" :id="vsEditor.id" :start-mode="vsEditor.startMode || 'form'" @done="onVsDone" @cancel="vsEditor = null" />
+  </Drawer>
   <Transition name="fade"><div v-if="toast" class="toast">{{ toast }}</div></Transition>
 </template>
 

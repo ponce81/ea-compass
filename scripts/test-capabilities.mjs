@@ -1,5 +1,5 @@
 // Capability editor checks: npm run test:capabilities
-import { db, switchTenant, addCapability, updateCapability, moveCapability, deleteCapability, capabilityUsage, l1Caps, childrenOf } from '../src/store.js'
+import { db, switchTenant, addCapability, updateCapability, moveCapability, deleteCapability, capabilityUsage, l1Caps, childrenOf, saveValueStream, deleteValueStream, validateValueStream } from '../src/store.js'
 
 let failed = 0
 const check = (ok, msg) => { console.log(`${ok ? 'PASS' : 'FAIL'}  ${msg}`); if (!ok) failed++ }
@@ -57,9 +57,28 @@ for (const c of childrenOf(dom)) deleteCapability(c.id)
 deleteCapability(dom)
 check(!db.capabilities.some(c => c.id === dom) && grouped() && refsOk(), 'empty domain deleted')
 
+// value streams
+const vsCount = db.valueStreams.length
+const vs = saveValueStream({ name: 'Idea-to-Launch', stakeholder: 'Product team', stages: [{ name: 'Ideate', capabilityIds: ['C3.1'] }, { name: 'Price', capabilityIds: ['C2.1', 'C2.1'] }, { name: 'Sell', capabilityIds: ['C2.4'] }] })
+check(vs === 'VS5' && db.valueStreams.length === vsCount + 1, `new value stream gets next id (${vs})`)
+check(db.valueStreams.find(v => v.id === vs).stages[1].capabilityIds.length === 1, 'duplicate capability in a stage removed')
+throws(() => saveValueStream({ name: 'order-to-cash', stakeholder: '', stages: [{ name: 'A', capabilityIds: [] }] }), 'duplicate value stream name rejected')
+throws(() => saveValueStream({ name: 'Empty', stakeholder: '', stages: [] }), 'value stream without stages rejected')
+check(Object.keys(validateValueStream({ name: 'X', stages: [{ name: 'A', capabilityIds: [] }, { name: 'a', capabilityIds: [] }] })).includes('stage-1'), 'duplicate stage name flagged on that stage')
+throws(() => saveValueStream({ name: 'Y', stakeholder: '', stages: [{ name: 'A', capabilityIds: ['C99'] }] }), 'unknown capability in a stage rejected')
+const edited = { ...db.valueStreams.find(v => v.id === vs) }
+edited.stages = [edited.stages[2], edited.stages[0]]
+saveValueStream({ ...edited, name: 'Idea-to-Market' })
+const vsAfter = db.valueStreams.find(v => v.id === vs)
+check(vsAfter.name === 'Idea-to-Market' && vsAfter.stages.map(s => s.name).join() === 'Sell,Ideate', 'edit: rename, reorder and remove stages')
+deleteCapability('C2.4')
+check(!vsAfter.stages.some(s => s.capabilityIds.includes('C2.4')) && vsAfter.stages.length === 2, 'deleting a capability removes it from value stream stages')
+deleteValueStream(vs)
+check(db.valueStreams.length === vsCount, 'value stream deleted')
+
 // isolation: other client untouched
 switchTenant('meridian')
-check(db.capabilities.some(c => c.name === 'Appointment Scheduling') && !db.capabilities.some(c => c.name === 'Sustainability'), 'edits in Acme do not affect Meridian')
+check(db.capabilities.some(c => c.name === 'Appointment Scheduling') && !db.capabilities.some(c => c.name === 'Sustainability') && !db.valueStreams.some(v => v.name.startsWith('Idea-to')), 'edits in Acme do not affect Meridian')
 
 console.log(failed ? `\n${failed} check(s) failed` : '\nAll capability editor checks passed')
 process.exit(failed ? 1 : 0)
