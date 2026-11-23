@@ -21,17 +21,43 @@ variable "region" {
   type    = string
   default = "eu-central-1"
 }
+variable "github_owner" {
+  type    = string
+  default = "ponce81"
+}
+variable "github_owner_id" {
+  type        = number
+  description = "Numeric GitHub user id of the owner (https://api.github.com/users/<owner>)"
+  default     = 49655359
+}
 variable "github_repo" {
-  type        = string
-  description = "owner/name of the GitHub repository allowed to deploy"
-  default     = "ponce81/ea-compass"
+  type    = string
+  default = "ea-compass"
+}
+variable "github_repo_id" {
+  type        = number
+  description = "Numeric GitHub repository id (https://api.github.com/repos/<owner>/<repo>)"
+  default     = 1469368011
 }
 
 locals {
-  # dev deploys from pushes to main, prod only from release tags (v*)
+  # GitHub sends the subject either as "repo:owner/repo:..." or, for newer repositories,
+  # with immutable ids "repo:owner@<owner-id>/repo@<repo-id>:..." – both are accepted.
+  repo_subjects = [
+    "repo:${var.github_owner}@${var.github_owner_id}/${var.github_repo}@${var.github_repo_id}",
+    "repo:${var.github_owner}/${var.github_repo}",
+  ]
+  # dev deploys from pushes to main, prod only from release tags (v*).
+  # Conditions are stored as JSON so both environments can have a different shape.
+  aud = { "token.actions.githubusercontent.com:aud" = "sts.amazonaws.com" }
   environments = {
-    dev  = { subject = "repo:${var.github_repo}:ref:refs/heads/main", operator = "StringEquals" }
-    prod = { subject = "repo:${var.github_repo}:ref:refs/tags/v*", operator = "StringLike" }
+    dev = jsonencode({
+      StringEquals = merge(local.aud, { "token.actions.githubusercontent.com:sub" = [for r in local.repo_subjects : "${r}:ref:refs/heads/main"] })
+    })
+    prod = jsonencode({
+      StringEquals = local.aud
+      StringLike   = { "token.actions.githubusercontent.com:sub" = [for r in local.repo_subjects : "${r}:ref:refs/tags/v*"] }
+    })
   }
 }
 
@@ -101,7 +127,7 @@ resource "aws_s3_bucket_website_configuration" "site" {
 resource "aws_iam_role" "deploy" {
   for_each             = local.environments
   name                 = "ea-compass-deploy-${each.key}"
-  description          = "GitHub Actions (${var.github_repo}) deploys EA Compass ${each.key}"
+  description          = "GitHub Actions (${var.github_owner}/${var.github_repo}) deploys EA Compass ${each.key}"
   max_session_duration = 3600
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
@@ -109,16 +135,7 @@ resource "aws_iam_role" "deploy" {
       Effect    = "Allow"
       Principal = { Federated = data.aws_iam_openid_connect_provider.github.arn }
       Action    = "sts:AssumeRoleWithWebIdentity"
-      # aud and sub must both be checked; for dev both use StringEquals, so they share one block
-      Condition = each.value.operator == "StringEquals" ? {
-        StringEquals = {
-          "token.actions.githubusercontent.com:aud" = "sts.amazonaws.com"
-          "token.actions.githubusercontent.com:sub" = each.value.subject
-        }
-        } : {
-        StringEquals = { "token.actions.githubusercontent.com:aud" = "sts.amazonaws.com" }
-        StringLike   = { "token.actions.githubusercontent.com:sub" = each.value.subject }
-      }
+      Condition = jsondecode(each.value)
     }]
   })
 }
